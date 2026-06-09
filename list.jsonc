@@ -1,0 +1,18 @@
+/*
+
+Por favor, não apague este ficheiro; pois .github/workflows/fetch-files.yml depende dele.
+Neste ficheiro devem estar listadas as informações sobre cada pacote deste repositório (em jsonc), no seguinte formato:
+
+"atom": {
+    "repo type": "opções disponiveis: git"
+    "repo": "dono/repositório"
+}
+
+*/
+
+{
+    "app-antivirus": {
+        "repo type": "git",
+        "repo": ""
+    }
+}

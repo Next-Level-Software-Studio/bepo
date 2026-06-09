@@ -1,7 +1,118 @@
-amd64   base            dev
-amd64   normal          stable
-amd64   development     stable
-amd64   gaming          stable
-amd64   minimal         stable
-amd64   server          stable
-amd64   study           stable
+# ==================== AMD64 PROFILES ====================
+# Base
+amd64           amd64/base/openrc                     stable
+amd64           amd64/base/systemd                    stable
+
+# Minimal (for no graphical environment)
+amd64           amd64/minimal/openrc                  stable
+amd64           amd64/minimal/systemd                 stable
+
+# GNOME
+amd64           amd64/gnome/openrc/normal             stable
+amd64           amd64/gnome/openrc/development        stable
+amd64           amd64/gnome/openrc/gaming             stable
+amd64           amd64/gnome/openrc/minimal            stable
+amd64           amd64/gnome/openrc/server             stable
+amd64           amd64/gnome/openrc/study              stable
+
+amd64           amd64/gnome/systemd/normal            stable
+amd64           amd64/gnome/systemd/development       stable
+amd64           amd64/gnome/systemd/gaming            stable
+amd64           amd64/gnome/systemd/minimal           stable
+amd64           amd64/gnome/systemd/server            stable
+amd64           amd64/gnome/systemd/study             stable
+
+# KDE Plasma
+amd64           amd64/plasma/openrc/normal            stable
+amd64           amd64/plasma/openrc/development       stable
+amd64           amd64/plasma/openrc/gaming            stable
+amd64           amd64/plasma/openrc/minimal           stable
+amd64           amd64/plasma/openrc/server            stable
+amd64           amd64/plasma/openrc/study             stable
+
+amd64           amd64/plasma/systemd/normal           stable
+amd64           amd64/plasma/systemd/development      stable
+amd64           amd64/plasma/systemd/gaming           stable
+amd64           amd64/plasma/systemd/minimal          stable
+amd64           amd64/plasma/systemd/server           stable
+amd64           amd64/plasma/systemd/study            stable
+
+
+# ==================== ARM64 PROFILES ====================
+# Base
+arm64           arm64/base/openrc                     stable
+arm64           arm64/base/systemd                    stable
+
+# Minimal (for no graphical environment)
+arm64           arm64/minimal/openrc                  stable
+arm64           arm64/minimal/systemd                 stable
+
+# GNOME
+arm64           arm64/gnome/openrc/normal             stable
+arm64           arm64/gnome/openrc/development        stable
+arm64           arm64/gnome/openrc/gaming             stable
+arm64           arm64/gnome/openrc/minimal            stable
+arm64           arm64/gnome/openrc/server             stable
+arm64           arm64/gnome/openrc/study              stable
+
+arm64           arm64/gnome/systemd/normal            stable
+arm64           arm64/gnome/systemd/development       stable
+arm64           arm64/gnome/systemd/gaming            stable
+arm64           arm64/gnome/systemd/minimal           stable
+arm64           arm64/gnome/systemd/server            stable
+arm64           arm64/gnome/systemd/study             stable
+
+# KDE Plasma
+arm64           arm64/plasma/openrc/normal            stable
+arm64           arm64/plasma/openrc/development       stable
+arm64           arm64/plasma/openrc/gaming            stable
+arm64           arm64/plasma/openrc/minimal           stable
+arm64           arm64/plasma/openrc/server            stable
+arm64           arm64/plasma/openrc/study             stable
+
+arm64           arm64/plasma/systemd/normal           stable
+arm64           arm64/plasma/systemd/development      stable
+arm64           arm64/plasma/systemd/gaming           stable
+arm64           arm64/plasma/systemd/minimal          stable
+arm64           arm64/plasma/systemd/server           stable
+arm64           arm64/plasma/systemd/study            stable
+
+
+# ==================== ARM PROFILES ====================
+# Base
+arm             arm/base/openrc                       stable
+arm             arm/base/systemd                      stable
+
+# Minimal (for no graphical environment)
+arm             arm/minimal/openrc                    stable
+arm             arm/minimal/systemd                   stable
+
+# GNOME
+arm             arm/gnome/openrc/normal               stable
+arm             arm/gnome/openrc/development          stable
+arm             arm/gnome/openrc/gaming               stable
+arm             arm/gnome/openrc/minimal              stable
+arm             arm/gnome/openrc/server               stable
+arm             arm/gnome/openrc/study                stable
+
+arm             arm/gnome/systemd/normal              stable
+arm             arm/gnome/systemd/development         stable
+arm             arm/gnome/systemd/gaming              stable
+arm             arm/gnome/systemd/minimal             stable
+arm             arm/gnome/systemd/server              stable
+arm             arm/gnome/systemd/study               stable
+
+# KDE Plasma
+arm             arm/plasma/openrc/normal              stable
+arm             arm/plasma/openrc/development         stable
+arm             arm/plasma/openrc/gaming              stable
+arm             arm/plasma/openrc/minimal             stable
+arm             arm/plasma/openrc/server              stable
+arm             arm/plasma/openrc/study               stable
+
+arm             arm/plasma/systemd/normal             stable
+arm             arm/plasma/systemd/development        stable
+arm             arm/plasma/systemd/gaming             stable
+arm             arm/plasma/systemd/minimal            stable
+arm             arm/plasma/systemd/server             stable
+arm             arm/plasma/systemd/study              stable

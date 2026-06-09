@@ -4,5 +4,6 @@ PYTHON_SINGLE_TARGET="python3_13"
 PYTHON_TARGETS="python3_13 python3_14"
 LC_MESSAGES=C.UTF-8
 MAKEOPTS="(( ($(nproc) * 3 + 3) / 4 ))"
-USE="verify-sig selinux verify-sig openrc doc handbook dbus"
+USE="verify-sig selinux openrc doc handbook -systemd"
 FEATURES="ccache parallel-fetch splitdebug compressdebug usersandbox fail-clean candy"
+DISTDIR="/var/cache/portage/"
