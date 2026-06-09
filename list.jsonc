@@ -11,8 +11,12 @@ Neste ficheiro devem estar listadas as informações sobre cada pacote deste rep
 */
 
 {
-    "app-antivirus": {
+    "app-antivirus/guard": {
         "repo type": "git",
-        "repo": ""
+        "repo": "Next-Level-Software-Studio/Guard-for-Bit-OS"
+    },
+    "dev-python/pydev-tools": {
+        "repo type": "git",
+        "repo": "Next-Level-Software-Studio/PyDev-Tools"
     }
 }
