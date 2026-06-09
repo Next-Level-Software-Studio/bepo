@@ -1,42 +1,43 @@
-name: "Fetch ebuils and metadata"
+name: "Fetch ebuilds and metadata"
 
 on:
   schedule:
-    # Runs every day at 00:00 and 12:00 (UTC / Greenwich)
+    # Executa todos os dias às 00:00 e 12:00 (UTC)
     - cron: '0 0,12 * * *'
-  workflow_dispatch: # Allows manual trigger for testing
+  workflow_dispatch: # Permite execução manual para testes
 
 jobs:
   update:
     runs-on: ubuntu-latest
     
     steps:
-      # Step 1: checkout the current repository (the repo containing this workflow)
+      # Passo 1: checkout do repositório atual
       - name: Checkout current repository
         uses: actions/checkout@v4
+        with:
+          # Definir o token explicitamente garante permissão de escrita para o push
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Steps 2, 3, 4 and 5: processing and copying files
+      # Processamento e cópia dos arquivos
       - name: Loop, validate, and copy files
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Fetching remote JSONC list..."
           
-          # Baixa o arquivo list.jsonc da API do GitHub usando o token de autenticação
+          # Baixa o arquivo list.jsonc de forma segura
           RAW_JSONC=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3.raw" \
             "https://api.github.com/repos/Next-Level-Software-Studio/NLSS-Portage-Overlay/contents/list.jsonc")
 
-          # Valida se o download funcionou
           if [ -z "$RAW_JSONC" ] || echo "$RAW_JSONC" | grep -q "Not Found"; then
             echo "Error: Could not fetch list.jsonc from remote repository."
             exit 1
           fi
 
-          # Remove comentários multilinha (/* */) e de linha única (//) de forma segura
+          # Remove comentários (JSONC para JSON limpo)
           JSON_DATA=$(echo "$RAW_JSONC" | perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm')
 
-          # Create a temporary file for the commit message history
           COMMIT_MSG_FILE="commit_message.txt"
           echo "Automatic update of ebuilds and metadata" > $COMMIT_MSG_FILE
           echo "" >> $COMMIT_MSG_FILE
@@ -44,23 +45,26 @@ jobs:
 
           HAS_COPY=false
 
-          # Step 2: loop through the JSON keys
-          echo "$JSON_DATA" | jq -r 'keys[]' | while read -r KEY; do
+          # CORREÇÃO: Uso de Substituição de Processo no final do bloco para manter as variáveis vivas
+          while read -r KEY; do
+            [ -z "$KEY" ] && continue
+            
             REPO=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".repo")
             
             echo "----------------------------------------"
             echo "Processing: $KEY"
             
-            # split the key to find category and package
             CATEGORY="${KEY%%/*}"
             PACKAGE_NAME="${KEY#*/}"
             
-            # Step 3: clone the external repository root temporarily
-            git clone --depth 1 "https://github.com/$REPO.git" temp_repo
+            # Limpa qualquer resquício anterior para evitar erros de clonagem
+            rm -rf temp_repo
             
-            # count files in the root of the cloned repository (strict validation)
-            COUNT_EBUILD=$(find temp_repo -maxdepth 1 -name "*.ebuild" | wc -l)
-            COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" | wc -l)
+            # Redireciona o stdin para /dev/null para evitar que o git "engula" as chaves do laço
+            git clone --depth 1 "https://github.com/$REPO.git" temp_repo < /dev/null
+            
+            COUNT_EBUILD=$(find temp_repo -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
+            COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" 2>/dev/null | wc -l)
             
             if [ "$COUNT_EBUILD" -eq 1 ] && [ "$COUNT_METADATA" -eq 1 ]; then
               echo "Success: requirements met. Copying files..."
@@ -68,15 +72,12 @@ jobs:
               EBUILD_PATH=$(find temp_repo -maxdepth 1 -name "*.ebuild")
               EBUILD_NAME=$(basename "$EBUILD_PATH")
               
-              # Step 4: create destination folders in the current repository if missing
               DEST_DIR="$CATEGORY/$PACKAGE_NAME"
               mkdir -p "$DEST_DIR"
               
-              # copy the files
               cp "$EBUILD_PATH" "$DEST_DIR/"
               cp "temp_repo/metadata.xml" "$DEST_DIR/"
               
-              # record the history for the commit message
               echo "- from $REPO to $DEST_DIR/ ($EBUILD_NAME and metadata.xml)" >> $COMMIT_MSG_FILE
               HAS_COPY=true
               
@@ -85,19 +86,20 @@ jobs:
               echo "Warning: requirements not met in $REPO. Skipping..."
             fi
             
-            # remove the temp folder before the next loop
             rm -rf temp_repo
             
-          done
+          done < <(echo "$JSON_DATA" | jq -r 'keys[]')
 
-          # configure git so the commit can be created
+          # Garante que a pasta temporária foi removida antes de checar o status do git
+          rm -rf temp_repo
+
+          # Configura o perfil do Git
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "actions@github.com"
           
-          # stage all new folders and changes
           git add .
 
-          # Step 5: commit with the detailed message (only if there are real changes)
+          # Agora a condição funcionará corretamente e fará o commit/push
           if [ "$HAS_COPY" = true ] && ! git diff --staged --quiet; then
             echo "Committing changes to GitHub..."
             git commit -F $COMMIT_MSG_FILE
@@ -106,5 +108,4 @@ jobs:
             echo "No changes detected or no repository met the requirements. Nothing to commit."
           fi
           
-          # remove the temporary commit message file
           rm -f $COMMIT_MSG_FILE
