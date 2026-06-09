@@ -18,5 +18,10 @@ Neste ficheiro devem estar listadas as informações sobre cada pacote deste rep
     "dev-python/pydev-tools": {
         "repo type": "git",
         "repo": "Next-Level-Software-Studio/PyDev-Tools"
-    }
+    },
+    "sys-apps/bpm": {
+        "repo type": "git",
+        "repo": "Next-Level-Software-Studio/Bit-OS-Package-Manager"
+    },
+    
 }
