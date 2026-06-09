@@ -1,0 +1,110 @@
+name: "Fetch ebuils and metadata"
+
+on:
+  schedule:
+    # Runs every day at 00:00 and 12:00 (UTC / Greenwich)
+    - cron: '0 0,12 * * *'
+  workflow_dispatch: # Allows manual trigger for testing
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: checkout the current repository (the repo containing this workflow)
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+
+      # Steps 2, 3, 4 and 5: processing and copying files
+      - name: Loop, validate, and copy files
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Fetching remote JSONC list..."
+          
+          # Baixa o arquivo list.jsonc da API do GitHub usando o token de autenticação
+          RAW_JSONC=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            "https://api.github.com/repos/Next-Level-Software-Studio/NLSS-Portage-Overlay/contents/list.jsonc")
+
+          # Valida se o download funcionou
+          if [ -z "$RAW_JSONC" ] || echo "$RAW_JSONC" | grep -q "Not Found"; then
+            echo "Error: Could not fetch list.jsonc from remote repository."
+            exit 1
+          fi
+
+          # Remove comentários multilinha (/* */) e de linha única (//) de forma segura
+          JSON_DATA=$(echo "$RAW_JSONC" | perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm')
+
+          # Create a temporary file for the commit message history
+          COMMIT_MSG_FILE="commit_message.txt"
+          echo "Automatic update of ebuilds and metadata" > $COMMIT_MSG_FILE
+          echo "" >> $COMMIT_MSG_FILE
+          echo "Copied files:" >> $COMMIT_MSG_FILE
+
+          HAS_COPY=false
+
+          # Step 2: loop through the JSON keys
+          echo "$JSON_DATA" | jq -r 'keys[]' | while read -r KEY; do
+            REPO=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".repo")
+            
+            echo "----------------------------------------"
+            echo "Processing: $KEY"
+            
+            # split the key to find category and package
+            CATEGORY="${KEY%%/*}"
+            PACKAGE_NAME="${KEY#*/}"
+            
+            # Step 3: clone the external repository root temporarily
+            git clone --depth 1 "https://github.com/$REPO.git" temp_repo
+            
+            # count files in the root of the cloned repository (strict validation)
+            COUNT_EBUILD=$(find temp_repo -maxdepth 1 -name "*.ebuild" | wc -l)
+            COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" | wc -l)
+            
+            if [ "$COUNT_EBUILD" -eq 1 ] && [ "$COUNT_METADATA" -eq 1 ]; then
+              echo "Success: requirements met. Copying files..."
+              
+              EBUILD_PATH=$(find temp_repo -maxdepth 1 -name "*.ebuild")
+              EBUILD_NAME=$(basename "$EBUILD_PATH")
+              
+              # Step 4: create destination folders in the current repository if missing
+              DEST_DIR="$CATEGORY/$PACKAGE_NAME"
+              mkdir -p "$DEST_DIR"
+              
+              # copy the files
+              cp "$EBUILD_PATH" "$DEST_DIR/"
+              cp "temp_repo/metadata.xml" "$DEST_DIR/"
+              
+              # record the history for the commit message
+              echo "- from $REPO to $DEST_DIR/ ($EBUILD_NAME and metadata.xml)" >> $COMMIT_MSG_FILE
+              HAS_COPY=true
+              
+              echo "Files successfully copied to: $DEST_DIR"
+            else
+              echo "Warning: requirements not met in $REPO. Skipping..."
+            fi
+            
+            # remove the temp folder before the next loop
+            rm -rf temp_repo
+            
+          done
+
+          # configure git so the commit can be created
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "actions@github.com"
+          
+          # stage all new folders and changes
+          git add .
+
+          # Step 5: commit with the detailed message (only if there are real changes)
+          if [ "$HAS_COPY" = true ] && ! git diff --staged --quiet; then
+            echo "Committing changes to GitHub..."
+            git commit -F $COMMIT_MSG_FILE
+            git push
+          else
+            echo "No changes detected or no repository met the requirements. Nothing to commit."
+          fi
+          
+          # remove the temporary commit message file
+          rm -f $COMMIT_MSG_FILE
