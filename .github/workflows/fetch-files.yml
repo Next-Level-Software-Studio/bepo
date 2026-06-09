@@ -2,8 +2,8 @@ name: "Fetch ebuilds and metadata"
 
 on:
   schedule:
-    # Executa todos os dias às 00:00 e 12:00 (UTC)
-    - cron: '0 0,12 * * *'
+    # Executa 4 vezes ao dia (a cada 6 horas: 00:00, 06:00, 12:00 e 18:00 UTC)
+    - cron: '0 */6 * * *'
   workflow_dispatch: # Permite execução manual para testes
 
 # Permissão necessária para que o GitHub Actions consiga dar o 'git push'
@@ -28,27 +28,30 @@ jobs:
         run: |
           echo "Fetching remote JSONC list..."
           
-          # Baixa o arquivo list.jsonc de forma segura
-          RAW_JSONC=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          # Criamos o arquivo de commit temporário FORA da área do git para evitar commits acidentais
+          COMMIT_MSG_FILE=$(mktemp)
+          echo "Automatic update of ebuilds and metadata" > "$COMMIT_MSG_FILE"
+          echo "" >> "$COMMIT_MSG_FILE"
+          echo "Copied files:" >> "$COMMIT_MSG_FILE"
+          
+          # Baixa o arquivo validando o HTTP Status Code (-w "%{http_code}")
+          HTTP_RESPONSE=$(curl -s -o raw_jsonc.txt -w "%{http_code}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3.raw" \
             "https://api.github.com/repos/Next-Level-Software-Studio/NLSS-Portage-Overlay/contents/list.jsonc")
 
-          if [ -z "$RAW_JSONC" ] || echo "$RAW_JSONC" | grep -q "Not Found"; then
-            echo "Error: Could not fetch list.jsonc from remote repository."
+          if [ "$HTTP_RESPONSE" -ne 200 ]; then
+            echo "Error: Could not fetch list.jsonc. HTTP Status: $HTTP_RESPONSE"
             exit 1
           fi
 
           # Remove comentários (JSONC para JSON limpo)
-          JSON_DATA=$(echo "$RAW_JSONC" | perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm')
-
-          COMMIT_MSG_FILE="commit_message.txt"
-          echo "Automatic update of ebuilds and metadata" > $COMMIT_MSG_FILE
-          echo "" >> $COMMIT_MSG_FILE
-          echo "Copied files:" >> $COMMIT_MSG_FILE
+          JSON_DATA=$(perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm' raw_jsonc.txt)
+          rm -f raw_jsonc.txt
 
           HAS_COPY=false
 
-          # Substituição de Processo para manter as variáveis vivas fora do laço
+          # Loop para processar os repositórios
           while read -r KEY; do
             [ -z "$KEY" ] && continue
             
@@ -62,53 +65,54 @@ jobs:
             
             rm -rf temp_repo
             
-            # Redireciona o stdin para /dev/null para o git não engolir as chaves do while
-            git clone --depth 1 "https://github.com/$REPO.git" temp_repo < /dev/null
-            
-            COUNT_EBUILD=$(find temp_repo -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
-            COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" 2>/dev/null | wc -l)
-            
-            if [ "$COUNT_EBUILD" -eq 1 ] && [ "$COUNT_METADATA" -eq 1 ]; then
-              echo "Success: requirements met. Copying files..."
+            # git clone seguro direcionando stdin para /dev/null
+            if git clone --depth 1 "https://github.com/$REPO.git" temp_repo < /dev/null 2>/dev/null; then
               
-              EBUILD_PATH=$(find temp_repo -maxdepth 1 -name "*.ebuild")
-              EBUILD_NAME=$(basename "$EBUILD_PATH")
+              COUNT_EBUILD=$(find temp_repo -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
+              COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" 2>/dev/null | wc -l)
               
-              DEST_DIR="$CATEGORY/$PACKAGE_NAME"
-              mkdir -p "$DEST_DIR"
-              
-              cp "$EBUILD_PATH" "$DEST_DIR/"
-              cp "temp_repo/metadata.xml" "$DEST_DIR/"
-              
-              echo "- from $REPO to $DEST_DIR/ ($EBUILD_NAME and metadata.xml)" >> $COMMIT_MSG_FILE
-              HAS_COPY=true
-              
-              echo "Files successfully copied to: $DEST_DIR"
+              if [ "$COUNT_EBUILD" -eq 1 ] && [ "$COUNT_METADATA" -eq 1 ]; then
+                echo "Success: requirements met. Copying files..."
+                
+                EBUILD_PATH=$(find temp_repo -maxdepth 1 -name "*.ebuild")
+                EBUILD_NAME=$(basename "$EBUILD_PATH")
+                
+                DEST_DIR="$CATEGORY/$PACKAGE_NAME"
+                mkdir -p "$DEST_DIR"
+                
+                cp "$EBUILD_PATH" "$DEST_DIR/"
+                cp "temp_repo/metadata.xml" "$DEST_DIR/"
+                
+                echo "- from $REPO to $DEST_DIR/ ($EBUILD_NAME and metadata.xml)" >> "$COMMIT_MSG_FILE"
+                HAS_COPY=true
+                
+                echo "Files successfully copied to: $DEST_DIR"
+              else
+                echo "Warning: requirements not met (must have exactly 1 ebuild and 1 metadata.xml) in $REPO. Skipping..."
+              fi
             else
-              echo "Warning: requirements not met in $REPO. Skipping..."
+              echo "Warning: Failed to clone repository $REPO. Skipping..."
             fi
             
             rm -rf temp_repo
             
           done < <(echo "$JSON_DATA" | jq -r 'keys[]')
 
-          rm -rf temp_repo
-
           # Configura o perfil do Git
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "actions@github.com"
           
-          # Remove o commit_message.txt do 'git add' temporariamente para ele não ser commitado por engano
+          # Adiciona apenas as mudanças legítimas ao stage
           git add .
-          git rm --cached $COMMIT_MSG_FILE 2>/dev/null || true
 
-          # Condição agora passa com sucesso e realiza o push com autorização
+          # Condição realiza o push com autorização se houver modificações reais no staging
           if [ "$HAS_COPY" = true ] && ! git diff --staged --quiet; then
             echo "Committing changes to GitHub..."
-            git commit -F $COMMIT_MSG_FILE
+            git commit -F "$COMMIT_MSG_FILE"
             git push
           else
             echo "No changes detected or no repository met the requirements. Nothing to commit."
           fi
           
-          rm -f $COMMIT_MSG_FILE
+          # Limpeza do arquivo temporário global criado pelo mktemp
+          rm -f "$COMMIT_MSG_FILE"
