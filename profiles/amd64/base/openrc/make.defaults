@@ -1,4 +1,4 @@
-CFLAGS="-02 -pipe -march=native -fstack-protector-strong -fstack-clash-protection"
+CFLAGS="-02 -pipe -march=native -fstack-protector-strong -fstack-clash-protection -D_FORTIFY_SOURCE=3 -fomit-frame-pointer"
 EMERGE_DEFAULT_OPS="--with-bdeps=y --verbose=y --quiet-build=n --keep-going --update --deep --changed-use"
 PYTHON_SINGLE_TARGET="python3_13"
 PYTHON_TARGETS="python3_13 python3_14"
@@ -6,4 +6,5 @@ LC_MESSAGES=C.UTF-8
 MAKEOPTS="(( ($(nproc) * 3 + 3) / 4 ))"
 USE="verify-sig selinux openrc doc handbook -systemd"
 FEATURES="ccache parallel-fetch splitdebug compressdebug usersandbox fail-clean candy"
-DISTDIR="/var/cache/portage/"
+DISTDIR="/var/cache/portage/distfiles"
+PKGDIR="/var/cache/portage/binpkgs/"
