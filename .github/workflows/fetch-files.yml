@@ -29,13 +29,13 @@ jobs:
         run: |
           echo "Fetching JSONC package list..."
           
-          # Criamos o arquivo de commit temporário FORA da área do git para evitar commits acidentais
+          # Criamos o arquivo de commit temporário FORA da área do git
           COMMIT_MSG_FILE=$(mktemp)
           echo "Automatic update of ebuilds and metadata" > "$COMMIT_MSG_FILE"
           echo "" >> "$COMMIT_MSG_FILE"
           echo "Copied files:" >> "$COMMIT_MSG_FILE"
           
-          # Baixa o arquivo validando o HTTP Status Code (-w "%{http_code}")
+          # Baixa o arquivo validando o HTTP Status Code
           HTTP_RESPONSE=$(curl -s -o raw_jsonc.txt -w "%{http_code}" \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3.raw" \
@@ -46,22 +46,33 @@ jobs:
             exit 1
           fi
 
-          # Remove comentários (Limpa o bloco /* ... */ inicial e comentários //)
+          # Remove comentários JSONC (Limpa blocos /* ... */ e linhas //)
           JSON_DATA=$(perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm' raw_jsonc.txt)
           rm -f raw_jsonc.txt
 
+          # Valida se o JSON final é válido antes de prosseguir
+          if ! echo "$JSON_DATA" | jq . >/dev/null 2>&1; then
+            echo "Error: Invalid JSON structure after removing comments."
+            exit 1
+          fi
+
           HAS_COPY=false
 
-          # Loop para processar os repositórios
+          # Loop para processar os repositórios obtidos do JSON
           while read -r KEY; do
-            [ -z "$KEY" ] && continue
+            [ -z "$KEY" ] || [ "$KEY" = "null" ] && continue
             
-            # Obtém o tipo do repositório e o caminho do repositório
-            REPO_TYPE=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".\"repo type\"")
-            REPO=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".repo")
+            # Obtém o tipo do repositório e o caminho de forma segura
+            REPO_TYPE=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".\"repo type\" // empty")
+            REPO=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".repo // empty")
             
             echo "----------------------------------------"
             echo "Processing: $KEY"
+            
+            if [ -z "$REPO" ] || [ -z "$REPO_TYPE" ]; then
+              echo "Warning: Missing 'repo' or 'repo type' for $KEY. Skipping..."
+              continue
+            fi
             
             # Validação do tipo do repositório
             if [ "$REPO_TYPE" != "git" ]; then
@@ -73,65 +84,113 @@ jobs:
             PACKAGE_NAME="${KEY#*/}"
             
             rm -rf temp_repo
+            mkdir -p temp_ebuilds
             
-            # git clone seguro direcionando stdin para /dev/null
-            if git clone --depth 1 "https://github.com/$REPO.git" temp_repo < /dev/null 2>/dev/null; then
+            # ATENÇÃO: Removeu-se o '--depth 1' para trazer todo o histórico de versões antigas
+            if git clone "https://github.com/$REPO.git" temp_repo >/dev/null 2>&1; then
               
-              # Conta o total de ebuilds presentes na raiz do repositório clonado
-              COUNT_EBUILD=$(find temp_repo -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
+              # Valida se pelo menos a versão atual possui o metadata.xml
               COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" 2>/dev/null | wc -l)
               
-              # Valida se existe pelo menos 1 ebuild e exatamente 1 metadata.xml
-              if [ "$COUNT_EBUILD" -ge 1 ] && [ "$COUNT_METADATA" -eq 1 ]; then
-                echo "Success: requirements met. Copying files..."
+              if [ "$COUNT_METADATA" -eq 1 ]; then
+                echo "Success: Metadata found. Extracting current and historical ebuilds..."
                 
                 DEST_DIR="$CATEGORY/$PACKAGE_NAME"
                 
-                # Limpa ebuilds antigos da pasta de destino para evitar arquivos órfãos
-                if [ -d "$DEST_DIR" ]; then
-                  rm -f "$DEST_DIR"/*.ebuild "$DEST_DIR"/metadata.xml
+                # Entra no repositório clonado para rodar comandos do Git internamente
+                cd temp_repo
+                
+                # 1. Encontra todos os arquivos .ebuild que existem OU JÁ EXISTIRAM na raiz deste repositório
+                # 'git log --all --name-only' lista o histórico de nomes de arquivos
+                ALL_EBUILDS=$(git log --all --name-only --format="" | grep '\.ebuild$' | sort -u)
+                
+                for FILENAME in $ALL_EBUILDS; do
+                  # Ignora se o arquivo mapeado estiver dentro de subpastas (queremos apenas a raiz)
+                  [[ "$FILENAME" == *"/"* ]] && continue
+                  
+                  # Encontra o hash do commit mais recente que modificou ou criou este arquivo ebuild específico
+                  LAST_COMMIT_HASH=$(git log -1 --format="%H" -- "$FILENAME" 2>/dev/null)
+                  [ -z "$LAST_COMMIT_HASH" ] && continue
+                  
+                  # Obtém o timestamp Unix (segundos) desse commit específico
+                  COMMIT_TIME=$(git log -1 --format="%ct" "$LAST_COMMIT_HASH")
+                  
+                  # Verifica se já guardamos uma versão desse mesmo arquivo ebuild nesta execução
+                  if [ -f "../temp_ebuilds/$FILENAME" ]; then
+                    OLD_COMMIT_TIME=$(cat "../temp_ebuilds/${FILENAME}.time")
+                    
+                    # Se o commit que modificou esta versão for mais recente, substitui
+                    if [ "$COMMIT_TIME" -gt "$OLD_COMMIT_TIME" ]; then
+                      git show "${LAST_COMMIT_HASH}:${FILENAME}" > "../temp_ebuilds/$FILENAME"
+                      echo "$COMMIT_TIME" > "../temp_ebuilds/${FILENAME}.time"
+                    fi
+                  else
+                    # Se for a primeira vez que vemos esse ebuild, extrai o conteúdo dele do Git
+                    git show "${LAST_COMMIT_HASH}:${FILENAME}" > "../temp_ebuilds/$FILENAME"
+                    echo "$COMMIT_TIME" > "../temp_ebuilds/${FILENAME}.time"
+                  fi
+                done
+                
+                # Volta para a pasta raiz do workflow
+                cd ..
+                
+                # Conta quantos ebuilds válidos históricos/atuais foram minerados
+                COUNT_MINED_EBUILDS=$(find temp_ebuilds -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
+                
+                if [ "$COUNT_MINED_EBUILDS" -gt 0 ]; then
+                  # Limpa ebuilds antigos no destino para evitar arquivos órfãos obsoletos
+                  if [ -d "$DEST_DIR" ]; then
+                    rm -f "$DEST_DIR"/*.ebuild "$DEST_DIR"/metadata.xml
+                  else
+                    mkdir -p "$DEST_DIR"
+                  fi
+                  
+                  # Copia o metadata.xml atual
+                  cp temp_repo/metadata.xml "$DEST_DIR/"
+                  
+                  # Move todos os ebuilds filtrados (sem duplicatas e com a data mais atual)
+                  cp temp_ebuilds/*.ebuild "$DEST_DIR/"
+                  
+                  echo "- from $REPO to $DEST_DIR/ ($COUNT_MINED_EBUILDS ebuild(s) extraídos do histórico)" >> "$COMMIT_MSG_FILE"
+                  HAS_COPY=true
+                  echo "Successfully processed $COUNT_MINED_EBUILDS ebuilds for $DEST_DIR"
                 else
-                  mkdir -p "$DEST_DIR"
+                  echo "Warning: No ebuilds could be extracted from history for $REPO."
                 fi
                 
-                # Copia todos os ebuilds encontrados e o metadata.xml
-                cp temp_repo/*.ebuild "$DEST_DIR/"
-                cp "temp_repo/metadata.xml" "$DEST_DIR/"
-                
-                echo "- from $REPO to $DEST_DIR/ ($COUNT_EBUILD ebuild(s) and metadata.xml)" >> "$COMMIT_MSG_FILE"
-                HAS_COPY=true
-                
-                echo "Files successfully copied to: $DEST_DIR"
               else
-                echo "Warning: requirements not met (must have at least 1 ebuild and 1 metadata.xml) in $REPO. Skipping..."
+                echo "Warning: Requirements not met (missing metadata.xml) in $REPO. Skipping..."
               fi
             else
               echo "Warning: Failed to clone repository $REPO. Skipping..."
             fi
             
-            rm -rf temp_repo
+            # Limpeza local pós-iteração
+            rm -rf temp_repo temp_ebuilds
             
           done < <(echo "$JSON_DATA" | jq -r 'keys[]')
 
-          # Configura o perfil do Git
-          git config --global user.name "GitHub Action Bot"
-          git config --global user.email "actions@github.com"
+          # Configura o perfil do Git localmente
+          git config user.name "GitHub Action Bot"
+          git config user.email "actions@github.com"
           
-          # Adiciona apenas as mudanças legítimas ao stage
+          # Adiciona as mudanças legítimas
           git add .
 
-          # Realiza o push se houver modificações reais no staging
+          # Realiza o push se houver modificações reais
           if [ "$HAS_COPY" = true ] && ! git diff --staged --quiet; then
             echo "Committing changes to GitHub..."
             git commit -F "$COMMIT_MSG_FILE"
             
-            # Sincroniza com o remoto antes do push para evitar erros de concorrência (non-fast-forward)
-            git pull --rebase origin main || git pull --rebase origin master
+            # Detecta dinamicamente a branch atual para o rebase correto
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            echo "Syncing with remote branch: $CURRENT_BRANCH"
+            git pull --rebase origin "$CURRENT_BRANCH"
             
-            git push
+            git push origin "$CURRENT_BRANCH"
           else
             echo "No changes detected or no repository met the requirements. Nothing to commit."
           fi
           
-          # Limpeza do arquivo temporário global criado pelo mktemp
+          # Limpeza final do arquivo de mensagem de commit
           rm -f "$COMMIT_MSG_FILE"
