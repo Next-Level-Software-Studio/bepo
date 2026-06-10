@@ -27,7 +27,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Fetching remote JSONC list..."
+          echo "Fetching JSONC package list..."
           
           # Criamos o arquivo de commit temporário FORA da área do git para evitar commits acidentais
           COMMIT_MSG_FILE=$(mktemp)
