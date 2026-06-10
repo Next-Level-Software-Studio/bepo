@@ -86,7 +86,7 @@ jobs:
             rm -rf temp_repo
             mkdir -p temp_ebuilds
             
-            # ATENÇÃO: Removeu-se o '--depth 1' para trazer todo o histórico de versões antigas
+            # Clone completo para trazer histórico de versões antigas
             if git clone "https://github.com/$REPO.git" temp_repo >/dev/null 2>&1; then
               
               # Valida se pelo menos a versão atual possui o metadata.xml
@@ -100,33 +100,40 @@ jobs:
                 # Entra no repositório clonado para rodar comandos do Git internamente
                 cd temp_repo
                 
-                # 1. Encontra todos os arquivos .ebuild que existem OU JÁ EXISTIRAM na raiz deste repositório
-                # 'git log --all --name-only' lista o histórico de nomes de arquivos
-                ALL_EBUILDS=$(git log --all --name-only --format="" | grep '\.ebuild$' | sort -u)
+                # Encontra todos os arquivos .ebuild que passaram pela árvore (ignora erros de log)
+                ALL_EBUILDS=$(git log --all --name-only --format="" 2>/dev/null | grep '\.ebuild$' | sort -u)
                 
                 for FILENAME in $ALL_EBUILDS; do
-                  # Ignora se o arquivo mapeado estiver dentro de subpastas (queremos apenas a raiz)
+                  # Ignora se o arquivo mapeado estiver dentro de subpastas (foca na raiz)
                   [[ "$FILENAME" == *"/"* ]] && continue
                   
-                  # Encontra o hash do commit mais recente que modificou ou criou este arquivo ebuild específico
+                  # Encontra o hash do commit mais recente que modificou ou criou este ebuild específico
                   LAST_COMMIT_HASH=$(git log -1 --format="%H" -- "$FILENAME" 2>/dev/null)
                   [ -z "$LAST_COMMIT_HASH" ] && continue
                   
                   # Obtém o timestamp Unix (segundos) desse commit específico
-                  COMMIT_TIME=$(git log -1 --format="%ct" "$LAST_COMMIT_HASH")
+                  COMMIT_TIME=$(git log -1 --format="%ct" "$LAST_COMMIT_HASH" 2>/dev/null)
+                  [ -z "$COMMIT_TIME" ] && continue
                   
-                  # Verifica se já guardamos uma versão desse mesmo arquivo ebuild nesta execução
+                  # Executa o git show em uma subshell protegida. Se o hash histórico falhar, o loop não quebra.
+                  if ! git show "${LAST_COMMIT_HASH}:${FILENAME}" > "../temp_ebuilds/working_${FILENAME}" 2>/dev/null; then
+                     echo "Notice: Snapshot for $FILENAME at commit $LAST_COMMIT_HASH is inaccessible or deleted there. Skipping this version..."
+                     rm -f "../temp_ebuilds/working_${FILENAME}"
+                     continue
+                  fi
+                  
+                  # Se a extração funcionou, aplica a validação de data
                   if [ -f "../temp_ebuilds/$FILENAME" ]; then
-                    OLD_COMMIT_TIME=$(cat "../temp_ebuilds/${FILENAME}.time")
+                    OLD_COMMIT_TIME=$(cat "../temp_ebuilds/${FILENAME}.time" 2>/dev/null || echo 0)
                     
-                    # Se o commit que modificou esta versão for mais recente, substitui
                     if [ "$COMMIT_TIME" -gt "$OLD_COMMIT_TIME" ]; then
-                      git show "${LAST_COMMIT_HASH}:${FILENAME}" > "../temp_ebuilds/$FILENAME"
+                      mv "../temp_ebuilds/working_${FILENAME}" "../temp_ebuilds/$FILENAME"
                       echo "$COMMIT_TIME" > "../temp_ebuilds/${FILENAME}.time"
+                    else
+                      rm -f "../temp_ebuilds/working_${FILENAME}"
                     fi
                   else
-                    # Se for a primeira vez que vemos esse ebuild, extrai o conteúdo dele do Git
-                    git show "${LAST_COMMIT_HASH}:${FILENAME}" > "../temp_ebuilds/$FILENAME"
+                    mv "../temp_ebuilds/working_${FILENAME}" "../temp_ebuilds/$FILENAME"
                     echo "$COMMIT_TIME" > "../temp_ebuilds/${FILENAME}.time"
                   fi
                 done
@@ -134,7 +141,7 @@ jobs:
                 # Volta para a pasta raiz do workflow
                 cd ..
                 
-                # Conta quantos ebuilds válidos históricos/atuais foram minerados
+                # Conta quantos ebuilds válidos históricos/atuais foram extraídos com sucesso
                 COUNT_MINED_EBUILDS=$(find temp_ebuilds -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
                 
                 if [ "$COUNT_MINED_EBUILDS" -gt 0 ]; then
