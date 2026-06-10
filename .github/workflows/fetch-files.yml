@@ -20,6 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 # Garante o histórico completo para um rebase seguro
 
       # Processamento e cópia dos arquivos
       - name: Loop, validate, and copy files
@@ -45,7 +46,7 @@ jobs:
             exit 1
           fi
 
-          # Remove comentários (JSONC para JSON limpo)
+          # Remove comentários (Limpa o bloco /* ... */ inicial e comentários //)
           JSON_DATA=$(perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm' raw_jsonc.txt)
           rm -f raw_jsonc.txt
 
@@ -55,10 +56,18 @@ jobs:
           while read -r KEY; do
             [ -z "$KEY" ] && continue
             
+            # Obtém o tipo do repositório e o caminho do repositório
+            REPO_TYPE=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".\"repo type\"")
             REPO=$(echo "$JSON_DATA" | jq -r ".\"$KEY\".repo")
             
             echo "----------------------------------------"
             echo "Processing: $KEY"
+            
+            # Validação do tipo do repositório
+            if [ "$REPO_TYPE" != "git" ]; then
+              echo "Warning: Repository type '$REPO_TYPE' is not supported for $KEY. Only 'git' is allowed. Skipping..."
+              continue
+            fi
             
             CATEGORY="${KEY%%/*}"
             PACKAGE_NAME="${KEY#*/}"
@@ -68,27 +77,33 @@ jobs:
             # git clone seguro direcionando stdin para /dev/null
             if git clone --depth 1 "https://github.com/$REPO.git" temp_repo < /dev/null 2>/dev/null; then
               
+              # Conta o total de ebuilds presentes na raiz do repositório clonado
               COUNT_EBUILD=$(find temp_repo -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
               COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" 2>/dev/null | wc -l)
               
-              if [ "$COUNT_EBUILD" -eq 1 ] && [ "$COUNT_METADATA" -eq 1 ]; then
+              # Valida se existe pelo menos 1 ebuild e exatamente 1 metadata.xml
+              if [ "$COUNT_EBUILD" -ge 1 ] && [ "$COUNT_METADATA" -eq 1 ]; then
                 echo "Success: requirements met. Copying files..."
                 
-                EBUILD_PATH=$(find temp_repo -maxdepth 1 -name "*.ebuild")
-                EBUILD_NAME=$(basename "$EBUILD_PATH")
-                
                 DEST_DIR="$CATEGORY/$PACKAGE_NAME"
-                mkdir -p "$DEST_DIR"
                 
-                cp "$EBUILD_PATH" "$DEST_DIR/"
+                # Limpa ebuilds antigos da pasta de destino para evitar arquivos órfãos
+                if [ -d "$DEST_DIR" ]; then
+                  rm -f "$DEST_DIR"/*.ebuild "$DEST_DIR"/metadata.xml
+                else
+                  mkdir -p "$DEST_DIR"
+                fi
+                
+                # Copia todos os ebuilds encontrados e o metadata.xml
+                cp temp_repo/*.ebuild "$DEST_DIR/"
                 cp "temp_repo/metadata.xml" "$DEST_DIR/"
                 
-                echo "- from $REPO to $DEST_DIR/ ($EBUILD_NAME and metadata.xml)" >> "$COMMIT_MSG_FILE"
+                echo "- from $REPO to $DEST_DIR/ ($COUNT_EBUILD ebuild(s) and metadata.xml)" >> "$COMMIT_MSG_FILE"
                 HAS_COPY=true
                 
                 echo "Files successfully copied to: $DEST_DIR"
               else
-                echo "Warning: requirements not met (must have exactly 1 ebuild and 1 metadata.xml) in $REPO. Skipping..."
+                echo "Warning: requirements not met (must have at least 1 ebuild and 1 metadata.xml) in $REPO. Skipping..."
               fi
             else
               echo "Warning: Failed to clone repository $REPO. Skipping..."
@@ -105,10 +120,14 @@ jobs:
           # Adiciona apenas as mudanças legítimas ao stage
           git add .
 
-          # Condição realiza o push com autorização se houver modificações reais no staging
+          # Realiza o push se houver modificações reais no staging
           if [ "$HAS_COPY" = true ] && ! git diff --staged --quiet; then
             echo "Committing changes to GitHub..."
             git commit -F "$COMMIT_MSG_FILE"
+            
+            # Sincroniza com o remoto antes do push para evitar erros de concorrência (non-fast-forward)
+            git pull --rebase origin main || git pull --rebase origin master
+            
             git push
           else
             echo "No changes detected or no repository met the requirements. Nothing to commit."
