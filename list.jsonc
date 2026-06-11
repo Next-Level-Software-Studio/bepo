@@ -24,7 +24,11 @@ Neste ficheiro devem estar listadas as informações sobre cada pacote deste rep
         "repo": "Next-Level-Software-Studio/Bit-OS-Package-Manager"
     },
     "sys-libs/dev-tools": {
-        "repo type":"git",
+        "repo type": "git",
         "repo": "Next-Level-Software-Studio/Dev-Tools"
+    },
+    "www-client": {
+        "repo type": "git",
+        "repo": "Next-Level-Software-Studio/Internet-Surfer"
     }
 }
