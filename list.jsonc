@@ -15,10 +15,6 @@ Neste ficheiro devem estar listadas as informações sobre cada pacote deste rep
         "repo type": "git",
         "repo": "Next-Level-Software-Studio/Guard-for-Bit-OS"
     },
-    "dev-python/pydev-tools": {
-        "repo type": "git",
-        "repo": "Next-Level-Software-Studio/PyDev-Tools"
-    },
     "sys-apps/bpm": {
         "repo type": "git",
         "repo": "Next-Level-Software-Studio/Bit-OS-Package-Manager"
@@ -27,8 +23,12 @@ Neste ficheiro devem estar listadas as informações sobre cada pacote deste rep
         "repo type": "git",
         "repo": "Next-Level-Software-Studio/Dev-Tools"
     },
-    "www-client": {
+    "www-client/internet-surfer": {
         "repo type": "git",
         "repo": "Next-Level-Software-Studio/Internet-Surfer"
+    },
+    "permissions-tracker": {
+        "repo type": "git",
+        "repo": "Next-Level-Software-Studio/NLSS-Permissions-Tracker"
     }
 }
