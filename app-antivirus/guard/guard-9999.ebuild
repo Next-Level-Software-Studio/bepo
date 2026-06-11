@@ -17,7 +17,7 @@ REQUIRED_USE="^^ ( openrc systemd )"
 RDEPEND="dev-lang/python
 	dev-python/python-magic
 	!net-firewall/ufw
-	sys-libs/pam[audit?,selinux?,openrc?,systemd?]
+	sys-libs/pam[-berkdb,audit?,selinux?,openrc?,systemd?]
 	audit? (
 		pam? ( sys-process/audit[split-usr?] )
 		sudo? ( sys-process/audit[split-usr?] )
