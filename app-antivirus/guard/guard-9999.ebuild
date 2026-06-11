@@ -4,14 +4,32 @@
 EAPI=8
 
 HOMEPAGE="https://github.com/Next-Level-Software-Studio/Guard-for-Bit-OS"
-SRC_URI="https://github.com/Next-Level-Software-Studio/Guard-for-Bit-OS/archive/refs/tags/v\${PV}.tar.gz -> \${P}.tar.gz"
+SRC_URI="https://github.com/Next-Level-Software-Studio/Guard-for-Bit-OS/archive/refs/tags/v${PV}.tar.gz -> ${P}.tar.gz"
 
 LICENSE="MIT"
 SLOT="0"
 KEYWORDS="amd64"
-IUSE="doc ufw"
+IUSE="audit bzip2 clamav doc nftables openrc pam rar selinux split-usr sudo systemd xml"
+
+# Garante que exatamente um dos dois deve estar ativo
+REQUIRED_USE="^^ ( openrc systemd )"
 
 RDEPEND="dev-lang/python
 	dev-python/python-magic
-	ufw? ( net-firewall/ufw )"
+	!net-firewall/ufw
+	sys-libs/pam[audit?,selinux?,openrc?,systemd?]
+	audit? (
+		pam? ( sys-process/audit[split-usr?] )
+		sudo? ( sys-process/audit[split-usr?] )
+		selinux? ( sys-process/audit[split-usr?] )
+	)
+	clamav? (
+		app-antivirus/clamav[clamapp,clamsubmit,iconv,metadata-analysis-api,system-mspack,bzip2?,rar?,xml?]
+	)
+	nftables? ( net-firewall/nftables[python] )
+	selinux? (
+		sys-libs/libselinux[python]
+		sys-apps/policycoreutils[pam,audit?,split-usr?]
+		clamav? ( sec-policy/selinux-clamav )
+	)"
 DEPEND="${RDEPEND}"
