@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # Passo 1: checkout do repositório atual
+      # Passo 1: checkout do repositório atual (traz o list.jsonc junto)
       - name: Checkout current repository
         uses: actions/checkout@v4
         with:
@@ -27,7 +27,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Fetching JSONC package list..."
+          echo "Reading local JSONC package list..."
           
           # Criamos o arquivo de commit temporário FORA da área do git
           COMMIT_MSG_FILE=$(mktemp)
@@ -35,20 +35,14 @@ jobs:
           echo "" >> "$COMMIT_MSG_FILE"
           echo "Copied files:" >> "$COMMIT_MSG_FILE"
           
-          # Baixa o arquivo validando o HTTP Status Code
-          HTTP_RESPONSE=$(curl -s -o raw_jsonc.txt -w "%{http_code}" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3.raw" \
-            "https://api.github.com/repos/Next-Level-Software-Studio/NLSS-Portage-Overlay/contents/list.jsonc")
-
-          if [ "$HTTP_RESPONSE" -ne 200 ]; then
-            echo "Error: Could not fetch list.jsonc. HTTP Status: $HTTP_RESPONSE"
+          # Valida se o arquivo existe localmente na raiz
+          if [ ! -f "list.jsonc" ]; then
+            echo "Error: list.jsonc not found in the repository root."
             exit 1
           fi
 
-          # Remove comentários JSONC (Limpa blocos /* ... */ e linhas //)
-          JSON_DATA=$(perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm' raw_jsonc.txt)
-          rm -f raw_jsonc.txt
+          # Remove comentários JSONC do arquivo local (Limpa blocos /* ... */ e linhas //)
+          JSON_DATA=$(perl -0777 -pe 's/\/\*[\s\S]*?\*\///g; s/^[[:blank:]]*\/\/.*$//gm' list.jsonc)
 
           # Valida se o JSON final é válido antes de prosseguir
           if ! echo "$JSON_DATA" | jq . >/dev/null 2>&1; then
@@ -83,82 +77,62 @@ jobs:
             CATEGORY="${KEY%%/*}"
             PACKAGE_NAME="${KEY#*/}"
             
-            rm -rf temp_repo
+            rm -rf temp_repo temp_ebuilds
             mkdir -p temp_ebuilds
             
-            # Clone completo para trazer histórico de versões antigas
-            if git clone "https://github.com/$REPO.git" temp_repo >/dev/null 2>&1; then
+            # Alvo estrito: Clona apenas a branch 'main' com histórico (--single-branch)
+            if git clone --branch main --single-branch "https://github.com/$REPO.git" temp_repo >/dev/null 2>&1; then
               
-              # Valida se pelo menos a versão atual possui o metadata.xml
+              # Valida se o metadata.xml atual existe na raiz da main
               COUNT_METADATA=$(find temp_repo -maxdepth 1 -name "metadata.xml" 2>/dev/null | wc -l)
               
               if [ "$COUNT_METADATA" -eq 1 ]; then
-                echo "Success: Metadata found. Extracting current and historical ebuilds..."
+                echo "Success: Metadata found. Extracting ebuilds from main history..."
                 
                 DEST_DIR="$CATEGORY/$PACKAGE_NAME"
                 
-                # Entra no repositório clonado para rodar comandos do Git internamente
                 cd temp_repo
                 
-                # Encontra todos os arquivos .ebuild que passaram pela árvore (ignora erros de log)
-                ALL_EBUILDS=$(git log --all --name-only --format="" 2>/dev/null | grep '\.ebuild$' | sort -u)
-                
-                for FILENAME in $ALL_EBUILDS; do
-                  # Ignora se o arquivo mapeado estiver dentro de subpastas (foca na raiz)
+                # Obtém a lista única de ebuilds que já passaram pela raiz da branch main
+                git log --name-only --format="" 2>/dev/null | grep '\.ebuild$' | sort -u | while read -r FILENAME; do
+                  [ -z "$FILENAME" ] && continue
+                  
+                  # Ignora se o arquivo estiver dentro de subpastas
                   [[ "$FILENAME" == *"/"* ]] && continue
                   
-                  # Encontra o hash do commit mais recente que modificou ou criou este ebuild específico
+                  # Encontra o commit mais recente na main que modificou este ebuild
                   LAST_COMMIT_HASH=$(git log -1 --format="%H" -- "$FILENAME" 2>/dev/null)
                   [ -z "$LAST_COMMIT_HASH" ] && continue
                   
-                  # Obtém o timestamp Unix (segundos) desse commit específico
-                  COMMIT_TIME=$(git log -1 --format="%ct" "$LAST_COMMIT_HASH" 2>/dev/null)
-                  [ -z "$COMMIT_TIME" ] && continue
-                  
-                  # Executa o git show em uma subshell protegida. Se o hash histórico falhar, o loop não quebra.
-                  if ! git show "${LAST_COMMIT_HASH}:${FILENAME}" > "../temp_ebuilds/working_${FILENAME}" 2>/dev/null; then
-                     echo "Notice: Snapshot for $FILENAME at commit $LAST_COMMIT_HASH is inaccessible or deleted there. Skipping this version..."
-                     rm -f "../temp_ebuilds/working_${FILENAME}"
-                     continue
-                  fi
-                  
-                  # Se a extração funcionou, aplica a validação de data
-                  if [ -f "../temp_ebuilds/$FILENAME" ]; then
-                    OLD_COMMIT_TIME=$(cat "../temp_ebuilds/${FILENAME}.time" 2>/dev/null || echo 0)
-                    
-                    if [ "$COMMIT_TIME" -gt "$OLD_COMMIT_TIME" ]; then
-                      mv "../temp_ebuilds/working_${FILENAME}" "../temp_ebuilds/$FILENAME"
-                      echo "$COMMIT_TIME" > "../temp_ebuilds/${FILENAME}.time"
-                    else
-                      rm -f "../temp_ebuilds/working_${FILENAME}"
-                    fi
+                  # Extrai o estado do arquivo diretamente daquele ponto da história
+                  if git show "${LAST_COMMIT_HASH}:${FILENAME}" > "../temp_ebuilds/${FILENAME}" 2>/dev/null; then
+                     echo "Extracted: $FILENAME from commit $LAST_COMMIT_HASH"
                   else
-                    mv "../temp_ebuilds/working_${FILENAME}" "../temp_ebuilds/$FILENAME"
-                    echo "$COMMIT_TIME" > "../temp_ebuilds/${FILENAME}.time"
+                     echo "Notice: Snapshot for $FILENAME is inaccessible. Skipping..."
+                     rm -f "../temp_ebuilds/${FILENAME}"
                   fi
                 done
                 
-                # Volta para a pasta raiz do workflow
                 cd ..
                 
-                # Conta quantos ebuilds válidos históricos/atuais foram extraídos com sucesso
+                # Conta quantos ebuilds foram minerados com sucesso
                 COUNT_MINED_EBUILDS=$(find temp_ebuilds -maxdepth 1 -name "*.ebuild" 2>/dev/null | wc -l)
                 
                 if [ "$COUNT_MINED_EBUILDS" -gt 0 ]; then
-                  # Limpa ebuilds antigos no destino para evitar arquivos órfãos obsoletos
+                  # Limpa o destino para evitar arquivos órfãos obsoletos
                   if [ -d "$DEST_DIR" ]; then
                     rm -f "$DEST_DIR"/*.ebuild "$DEST_DIR"/metadata.xml
                   else
                     mkdir -p "$DEST_DIR"
                   fi
                   
-                  # Copia o metadata.xml atual
+                  # Copia o metadata atualizado da main
                   cp temp_repo/metadata.xml "$DEST_DIR/"
                   
-                  # Move todos os ebuilds filtrados (sem duplicatas e com a data mais atual)
+                  # Move os ebuilds extraídos
                   cp temp_ebuilds/*.ebuild "$DEST_DIR/"
                   
-                  echo "- from $REPO to $DEST_DIR/ ($COUNT_MINED_EBUILDS ebuild(s) extraídos do histórico)" >> "$COMMIT_MSG_FILE"
+                  echo "- from $REPO (main) to $DEST_DIR/ ($COUNT_MINED_EBUILDS ebuild(s))" >> "$COMMIT_MSG_FILE"
                   HAS_COPY=true
                   echo "Successfully processed $COUNT_MINED_EBUILDS ebuilds for $DEST_DIR"
                 else
@@ -166,13 +140,13 @@ jobs:
                 fi
                 
               else
-                echo "Warning: Requirements not met (missing metadata.xml) in $REPO. Skipping..."
+                echo "Warning: Requirements not met (missing metadata.xml) in $REPO (main). Skipping..."
               fi
             else
-              echo "Warning: Failed to clone repository $REPO. Skipping..."
+              echo "Warning: Failed to clone 'main' branch for $REPO. Skipping..."
             fi
             
-            # Limpeza local pós-iteração
+            # Limpeza pós-iteração
             rm -rf temp_repo temp_ebuilds
             
           done < <(echo "$JSON_DATA" | jq -r 'keys[]')
@@ -181,7 +155,7 @@ jobs:
           git config user.name "GitHub Action Bot"
           git config user.email "actions@github.com"
           
-          # Adiciona as mudanças legítimas
+          # Adiciona as mudanças
           git add .
 
           # Realiza o push se houver modificações reais
@@ -189,15 +163,14 @@ jobs:
             echo "Committing changes to GitHub..."
             git commit -F "$COMMIT_MSG_FILE"
             
-            # Detecta dinamicamente a branch atual para o rebase correto
             CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
             echo "Syncing with remote branch: $CURRENT_BRANCH"
             git pull --rebase origin "$CURRENT_BRANCH"
             
             git push origin "$CURRENT_BRANCH"
           else
-            echo "No changes detected or no repository met the requirements. Nothing to commit."
+            echo "No changes detected. Nothing to commit."
           fi
           
-          # Limpeza final do arquivo de mensagem de commit
+          # Limpeza final
           rm -f "$COMMIT_MSG_FILE"
