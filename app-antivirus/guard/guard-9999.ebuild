@@ -9,7 +9,7 @@ SRC_URI="https://github.com/Next-Level-Software-Studio/Guard-for-Bit-OS/archive/
 LICENSE="MIT"
 SLOT="0"
 KEYWORDS="amd64"
-IUSE="audit bzip2 clamav doc nftables openrc pam rar selinux split-usr sudo systemd xml"
+IUSE="audit bzip2 clamav doc nftables openrc pam rar selinux split-usr sudo systemd xml chkrootkit rkhunter"
 
 # Garante que exatamente um dos dois deve estar ativo
 REQUIRED_USE="^^ ( openrc systemd )"
@@ -31,5 +31,14 @@ RDEPEND="dev-lang/python
 		sys-libs/libselinux[python]
 		sys-apps/policycoreutils[pam,audit?,split-usr?]
 		clamav? ( sec-policy/selinux-clamav )
-	)"
+		chkrootkit? (
+			sec-policy/selinux-chkrootkit
+			app-forensics/chkrootkit[selinux]
+		)
+		rkhunter? (
+			sec-policy/selinux-rkhunter
+			app-forensics/rkhunter[selinux]
+		)
+	)
+	chkrootkit? ( app-forensics/chkrootkit[cron] )"
 DEPEND="${RDEPEND}"
