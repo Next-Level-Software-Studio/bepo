@@ -2,7 +2,7 @@
 *dev-db/sqlite
 *net-misc/wget
 *app-portage/gentoolkit
-*=dev-lang/python-3.14.5
+*=dev-lang/python-3.14.6
 # Atualize para a versão mais atual estável do CPython
 *net-firewall/ufw
 *app-antivirus/clamav
