@@ -9,7 +9,7 @@ SRC_URI="https://github.com/Next-Level-Software-Studio/Guard-for-Bit-OS/archive/
 LICENSE="MIT"
 SLOT="0"
 KEYWORDS="amd64"
-IUSE="audit bzip2 clamav doc nftables openrc pam rar selinux split-usr sudo systemd xml chkrootkit rkhunter"
+IUSE="audit bzip2 clamav doc nftables openrc pam rar selinux split-usr sudo systemd xml chkrootkit rkhunter tor"
 
 # Garante que exatamente um dos dois deve estar ativo
 REQUIRED_USE="^^ ( openrc systemd )"
