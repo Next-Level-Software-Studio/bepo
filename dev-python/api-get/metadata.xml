@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="project">
+		<name>Next Level Software Studio</name>
+	</maintainer>
+	<longdescription>
+		api-get is a non-official API Wrapper, for Python, developed by NlSS. It supports Gentoo Packages,
+        Discord and GitHub.
+	</longdescription>
+	<longdescription lang="pt">
+        api-get é um wrapper de API, não oficial para Python, desenvolvido pela NLSS.
+        Ele suporta Gentoo Packages, Discord e GitHub.
+	</longdescription>
+	<stabilize-allarches/>
+	<upstream>
+		<maintainer>
+			<name>Next Level Software Studio</name>
+		</maintainer>
+		<remote-id type="github">Next-Level-Software-Studio/api-get</remote-id>
+	</upstream>
+</pkgmetadata>
