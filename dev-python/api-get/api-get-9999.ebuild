@@ -17,14 +17,14 @@ SRC_URI="https://github.com/Next-Level-Software-Studio/api-get/archive/refs/head
 # Licença alterada para MIT
 LICENSE="MIT"
 SLOT="0"
-KEYWORDS="~amd64 ~x86"
+KEYWORDS="amd64 ~x86"
 
 # Definição das USE flags personalizadas do projeto
 IUSE="github discord gentoo-packages"
 
 # Força o Portage a exigir exatamente a versão 3.14.6 do repositório oficial do Gentoo
 RDEPEND="
-	=dev-lang/python-3.14.6::gentoo
+	=dev-lang/python-3.14.6
 	${PYTHON_DEPS}
 "
 DEPEND="${RDEPEND}"
