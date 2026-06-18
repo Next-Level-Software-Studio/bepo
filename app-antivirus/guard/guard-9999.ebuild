@@ -65,3 +65,7 @@ src_prepare() {
 		rm -f "${S}/overlay/usr/share/guard/extensions/scan_logs/audit.py" || die
 	fi
 }
+
+src_install () {
+	dosbin 
+}
